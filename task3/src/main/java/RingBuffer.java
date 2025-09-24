@@ -1,5 +1,8 @@
 import java.util.Iterator;
-import java.util.function.Consumer;
+import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -7,9 +10,10 @@ public class RingBuffer<T> implements Iterable<T> {
 
     private final Logger logger = Logger.getLogger(RingBuffer.class.getName());
     private final int capacity;
-    private int size = 0;
-    private Node<T> current;
-    private Node<T> head;
+    private final AtomicReference<Node<T>> current = new AtomicReference<>();
+    private final AtomicReference<Node<T>> head = new AtomicReference<>();
+    private final AtomicInteger size = new AtomicInteger(0);
+    private final ReentrantLock lock = new ReentrantLock();
 
     public RingBuffer(int capacity) {
         if (capacity < 2) {
@@ -24,96 +28,102 @@ public class RingBuffer<T> implements Iterable<T> {
         logger.log(Level.FINE, "append value: {0}", value);
         Node<T> node = new Node<>(value);
 
-        if (size == 0) {
-            current = node;
-            head = current;
+        if (size.get() == 0) {
             node.next = node.prev = node;
-            size = 1;
+            head.set(node);
+            current.set(node);
+            size.set(1);
             logger.log(Level.FINER, "first element appended");
             return;
         }
 
-        Node<T> tail = head.prev;
-
+        Node<T> tail = head.get().prev;
         node.prev = tail;
-        node.next = head;
+        node.next = head.get();
         tail.next = node;
-        head.prev = node;
+        head.get().prev = node;
 
-        if (size < capacity) {
-            size++;
+        if (size.get() < capacity) {
+            size.incrementAndGet();
             logger.log(Level.FINER, "element appended, new size={0}", size);
         } else {
-            head = head.next;
-            Node<T> oldHead = head.prev;
+            lock.lock();
+            try {
+            head.set(head.get().next);
+            Node<T> oldHead = head.get().prev;
             oldHead.prev.next = oldHead.next;
             oldHead.next.prev = oldHead.prev;
             logger.log(Level.FINE, "buffer full, oldest element overwritten");
+            } finally {
+                lock.unlock();
+            }
         }
 
-        current = node;
+        current.set(node);
     }
 
     public T remove() {
-        if (size == 0) {
+        if (size.get() == 0) {
             logger.log(Level.WARNING, "remove() called on empty buffer");
             return null;
         }
 
-        T removed = current.value;
+        Node<T> curSnap = current.get();
+        T removed = curSnap.value;
         logger.log(Level.FINE, "remove element: {0}", removed);
 
-        if (size == 1) {
-            current = null;
-            size = 0;
+        if (size.get() == 1) {
+            current.set(null);
+            head.set(null);
+            size.set(0);
             logger.log(Level.FINER, "buffer became empty");
             return removed;
         }
 
-        Node<T> prev = current.prev;
-        Node<T> next = current.next;
-
+        Node<T> prev = curSnap.prev;
+        Node<T> next = curSnap.next;
 
         prev.next = next;
         next.prev = prev;
 
-        if (current == head) {
-            head = next;
+        if (curSnap == head.get()) {
+            head.set(next);
         }
 
-        current = next;
-        size--;
+        current.set(next);
+        size.decrementAndGet();
         logger.log(Level.FINER, "element removed, new size={0}", size);
         return removed;
     }
 
     public T getCurrent() {
+        Node<T> current = this.current.get();
         return (current != null) ? current.value : null;
     }
 
     public T getRelative(int offset) {
         rotateNext(offset);
-        T value = current.value;
+        T value = current.get().value;
         rotatePrev(offset);
         return value;
     }
 
     public void setRelative(int offset, T value) {
         rotateNext(offset);
-        current.value = value;
+        current.get().value = value;
         rotatePrev(offset);
     }
 
     public T getAbsolute(int offset) {
         rotateHeadNext(offset);
-        T value = head.value;
+        T value = head.get().value;
         rotateHeadPrev(offset);
         return value;
     }
 
     public void setAbsolute(int offset, T value) {
         rotateHeadNext(offset);
-        head.value = value;
+        head.get().value = value;
         rotateHeadPrev(offset);
     }
 
@@ -146,42 +156,51 @@ public class RingBuffer<T> implements Iterable<T> {
     }
 
     private void rotate(int count, boolean head, boolean next) {
-        if (size < 2 || count == 0) return;
-        count %= size;
-        if (count < 0) count += size;
+        if (size.get() < 2 || count == 0) return;
+        count %= size.get();
+        if (count < 0) count += size.get();
+
         for (int i = 0; i < count; i++) {
             if (head) {
-                this.head = (next) ? this.head.next : this.head.prev;
+                Node<T> h = this.head.get();
+                Node<T> nextNode = next ? h.next : h.prev;
+                this.head.set(nextNode);
             } else {
-                current = (next) ? current.next : current.prev;
-
+                Node<T> c = current.get();
+                Node<T> nextNode = next ? c.next : c.prev;
+                current.set(nextNode);
             }
         }
     }
 
     public int getSize() {
-        return size;
+        return size.get();
     }
 
     @Override
     public Iterator<T> iterator() {
         return new Iterator<T>() {
+            Node<T> last;
+            private Node<T> pos = head.get();
+            private int steps = 0;
+
             @Override
             public boolean hasNext() {
-                return false;
+                return steps < size.get();
             }
 
             @Override
             public T next() {
-                return null;
+                if (!hasNext()) throw new NoSuchElementException();
+                last = pos;
+                T value = pos.value;
+                pos = pos.next;
+                steps++;
+                return value;
             }
         };
     }
 
-    @Override
-    public void forEach(Consumer<? super T> action) {
-        Iterable.super.forEach(action);
-    }
 
     private static class Node<T> {
         Node<T> prev, next;
