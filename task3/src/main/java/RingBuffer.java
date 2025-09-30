@@ -1,12 +1,13 @@
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-public class RingBuffer<T> implements Iterable<T> {
+public class RingBuffer<T> implements Iterable<T>, AutoCloseable {
 
     private final Logger logger = Logger.getLogger(RingBuffer.class.getName());
     private final int capacity;
@@ -14,6 +15,7 @@ public class RingBuffer<T> implements Iterable<T> {
     private final AtomicReference<Node<T>> head = new AtomicReference<>();
     private final AtomicInteger size = new AtomicInteger(0);
     private final ReentrantLock lock = new ReentrantLock();
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     public RingBuffer(int capacity) {
         if (capacity < 2) {
@@ -25,6 +27,7 @@ public class RingBuffer<T> implements Iterable<T> {
     }
 
     public void append(T value) {
+        checkOpen();
         logger.log(Level.FINE, "append value: {0}", value);
         Node<T> node = new Node<>(value);
 
@@ -49,11 +52,11 @@ public class RingBuffer<T> implements Iterable<T> {
         } else {
             lock.lock();
             try {
-            head.set(head.get().next);
-            Node<T> oldHead = head.get().prev;
-            oldHead.prev.next = oldHead.next;
-            oldHead.next.prev = oldHead.prev;
-            logger.log(Level.FINE, "buffer full, oldest element overwritten");
+                head.set(head.get().next);
+                Node<T> oldHead = head.get().prev;
+                oldHead.prev.next = oldHead.next;
+                oldHead.next.prev = oldHead.prev;
+                logger.log(Level.FINE, "buffer full, oldest element overwritten");
             } finally {
                 lock.unlock();
             }
@@ -63,6 +66,7 @@ public class RingBuffer<T> implements Iterable<T> {
     }
 
     public T remove() {
+        checkOpen();
         if (size.get() == 0) {
             logger.log(Level.WARNING, "remove() called on empty buffer");
             return null;
@@ -97,6 +101,7 @@ public class RingBuffer<T> implements Iterable<T> {
     }
 
     public T getCurrent() {
+        checkOpen();
         Node<T> current = this.current.get();
         return (current != null) ? current.value : null;
     }
@@ -156,6 +161,7 @@ public class RingBuffer<T> implements Iterable<T> {
     }
 
     private void rotate(int count, boolean head, boolean next) {
+        checkOpen();
         if (size.get() < 2 || count == 0) return;
         count %= size.get();
         if (count < 0) count += size.get();
@@ -173,8 +179,25 @@ public class RingBuffer<T> implements Iterable<T> {
         }
     }
 
+    public boolean isFull() {
+        return size.get() == capacity;
+    }
+
+    public boolean isEmpty() {
+        return size.get() == 0;
+    }
+
+    public boolean isClosed() {
+        return closed.get();
+    }
+
+
     public int getSize() {
         return size.get();
+    }
+
+    private void checkOpen() {
+        if (isClosed()) throw new IllegalStateException("the RingBuffer is already closed");
     }
 
     @Override
@@ -199,6 +222,16 @@ public class RingBuffer<T> implements Iterable<T> {
                 return value;
             }
         };
+    }
+
+    @Override
+    public void close() {
+        logger.log(Level.FINE, "close buffer");
+        if (closed.getAndSet(true)) return;
+        head.set(null);
+        current.set(null);
+        size.set(0);
+        logger.log(Level.FINER,"buffer is closed");
     }
 
 
