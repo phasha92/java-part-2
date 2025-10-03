@@ -15,21 +15,19 @@ public class Worker implements Runnable {
     }
 
     private static List<KeyValue> map(String content) {
+        List<String> words = Arrays.stream(content.trim().split(" ")).toList();
 
-
-        return
+        return words.stream()
+                .map(word -> word.replaceAll("[^\\p{L}\\p{N}]+", ""))
+                .filter(word -> !word.isEmpty())
+                .map(word -> new KeyValue(word, "1"))
+                .toList();
     }
 
     public List<KeyValue> executeMap(int mapId, int reduceTasks) throws IOException {
         String content = Files.readString(workDir).replace('\n',' ');
 
-        List<String> words = Arrays.stream(content.trim().split(" ")).toList();
-
-        List<KeyValue> listKVs = words.stream()
-                .map(word -> word.replaceAll("[^\\p{L}\\p{N}]+", ""))
-                .filter(word -> !word.isEmpty())
-                .map(word -> new KeyValue(word, "1"))
-                .toList();
+        List<KeyValue> listKVs = map(content);
 
         List<KeyValue>[] buckets = new List[reduceTasks];
         for (int i = 0; i < reduceTasks; i++) buckets[i] = new ArrayList<>();
