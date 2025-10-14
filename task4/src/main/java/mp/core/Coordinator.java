@@ -177,15 +177,15 @@ public class Coordinator {
             } else {
                 logger.log(Level.INFO, "worker pool shut down successfully");
             }
-        }catch (InterruptedException e){
+        } catch (InterruptedException e) {
             logger.log(Level.WARNING, "coordinator interrupted", e);
             Thread.currentThread().interrupt();
             executor.shutdownNow();
         }
     }
 
-    void reportWorkerError(Exception e){
-        if (!errorOccuped){
+    void reportWorkerError(Exception e) {
+        if (!errorOccuped) {
             lock.lock();
             errorOccuped = true;
             logger.log(Level.SEVERE, "worker failed with exception", e);
