@@ -3,6 +3,7 @@ package mp.core;
 import mp.logic.WorkerLogic;
 import mp.model.KeyValue;
 
+import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,19 +28,18 @@ public class Worker implements Runnable {
     public void executeMap(Path inputFile, int bucketsCount) throws IOException {
         logger.log(Level.FINE, "starting map task for file: {0}", inputFile.getFileName());
 
-        String content = Files.readString(inputFile).replace('\n', ' ');
-        List<KeyValue> listKVs = logic.map(content);
-
-        logger.log(Level.FINER,
-                "distributing {0} key-value pairs into {1} buckets",
-                new Object[]{listKVs.size(), bucketsCount});
-
         List<KeyValue>[] buckets = new List[bucketsCount];
         for (int i = 0; i < bucketsCount; i++) buckets[i] = new ArrayList<>();
 
-        for (KeyValue kv : listKVs) {
-            int bucket = Math.floorMod(kv.key().hashCode(), bucketsCount);
-            buckets[bucket].add(kv);
+        try (BufferedReader reader = Files.newBufferedReader(inputFile)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                List<KeyValue> kvs = logic.map(line);
+                for (KeyValue kv : kvs) {
+                    int bucket = Math.floorMod(kv.key().hashCode(), bucketsCount);
+                    buckets[bucket].add(kv);
+                }
+            }
         }
 
         Path bucketsDir = coordinator.getBucketsDir();
