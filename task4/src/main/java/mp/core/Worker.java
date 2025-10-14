@@ -66,13 +66,15 @@ public class Worker implements Runnable {
         logger.log(Level.FINE, "starting reduce task for bucket {0}", reduceId);
 
         List<KeyValue> keyValues = new ArrayList<>();
-        for (String line : Files.readAllLines(bucketFile)) {
-            String[] parts = line.split("\t", 2);
-            if (parts.length >= 2) {
-                keyValues.add(new KeyValue(parts[0], parts[1]));
+        try (BufferedReader reader = Files.newBufferedReader(bucketFile)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                String[] parts = line.split("\t", 2);
+                if (parts.length >= 2) {
+                    keyValues.add(new KeyValue(parts[0], parts[1]));
+                }
             }
         }
-
         logger.log(Level.FINER, "parsed {0} key-value pairs from bucket file", keyValues.size());
 
         List<String> outLines = logic.reduce(keyValues);
