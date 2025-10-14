@@ -123,10 +123,10 @@ public class Worker implements Runnable {
             logger.log(Level.INFO, "received exit signal, shutting down {0}", Thread.currentThread().getName());
 
         } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
             logger.log(Level.WARNING, "worker interrupted", e);
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "worker failed with exception", e);
+            coordinator.reportWorkerError(e);
         }
     }
 }
