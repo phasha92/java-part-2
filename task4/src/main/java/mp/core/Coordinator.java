@@ -28,7 +28,7 @@ public class Coordinator {
     private final Queue<ReduceTask> reduceQueue = new ConcurrentLinkedQueue<>();
     private final AtomicInteger remainingMaps;
     private final AtomicInteger remainingReduces;
-    private final ReentrantLock reduceLock = new ReentrantLock();
+    private final ReentrantLock lock = new ReentrantLock();
     private final ExecutorService executor;
     private final Path bucketsDir;
     private final Path mergedDir;
@@ -114,7 +114,7 @@ public class Coordinator {
         }
 
         if (remainingMaps.get() == 0 && !reducePhaseStarted) {
-            reduceLock.lock();
+            lock.lock();
             try {
                 if (!reducePhaseStarted) {
                     logger.log(Level.FINE, "all map tasks done, starting reduce phase");
@@ -126,7 +126,7 @@ public class Coordinator {
                 logger.log(Level.SEVERE, "failed to merge buckets", e);
                 throw new UncheckedIOException(e);
             } finally {
-                reduceLock.unlock();
+                lock.unlock();
             }
             return reduceQueue.poll();
         }
@@ -152,7 +152,7 @@ public class Coordinator {
         return remainingMaps.get() == 0 && remainingReduces.get() == 0 && reduceQueue.isEmpty();
     }
 
-    public void run() throws InterruptedException {
+    public void run() {
         logger.log(Level.INFO, "starting coordinator with {0} workers and {1} buckets",
                 new Object[]{numWorkers, numBuckets});
 
@@ -162,18 +162,24 @@ public class Coordinator {
 
         logger.log(Level.INFO, "all workers submitted, awaiting completion");
 
-        while (!isFinished()) {
-            Thread.sleep(50);
-        }
+        try {
+            while (!isFinished()) {
+                Thread.sleep(50);
+            }
 
-        logger.log(Level.INFO, "all tasks completed, shutting down worker pool");
+            logger.log(Level.INFO, "all tasks completed, shutting down worker pool");
 
-        executor.shutdown();
-        if (!executor.awaitTermination(50, TimeUnit.SECONDS)) {
-            logger.log(Level.WARNING, "worker pool did not terminate gracefully, forcing shutdown");
+            executor.shutdown();
+            if (!executor.awaitTermination(50, TimeUnit.SECONDS)) {
+                logger.log(Level.WARNING, "worker pool did not terminate gracefully, forcing shutdown");
+                executor.shutdownNow();
+            } else {
+                logger.log(Level.INFO, "worker pool shut down successfully");
+            }
+        }catch (InterruptedException e){
+            logger.log(Level.WARNING, "coordinator interrupted", e);
+            Thread.currentThread().interrupt();
             executor.shutdownNow();
-        } else {
-            logger.log(Level.INFO, "worker pool shut down successfully");
         }
     }
 }
