@@ -11,8 +11,13 @@ public class Main {
     public static void main(String[] args) throws IOException, InterruptedException {
         tmpClean();
 
-        Path path = Path.of("src/main/resources");
-        Coordinator coordinator = new Coordinator(new WordCount(), path, 2, 4);
+        Path resources = Path.of("src/main/resources");
+        Path tmp = Path.of("tmp");
+        Path bucketsDir = tmp.resolve("buckets");
+        Path mergedDir = tmp.resolve("merged");
+        Path outDir = tmp.resolve("out");
+
+        Coordinator coordinator = new Coordinator(new WordCount(), resources, bucketsDir, mergedDir, outDir, 2, 4);
         coordinator.run();
     }
 
