@@ -34,6 +34,7 @@ public class Coordinator {
     private final Path mergedDir;
     private final Path outDir;
     private volatile boolean reducePhaseStarted = false;
+    private volatile boolean errorOccuped = false;
 
     public Coordinator(WorkerLogic logic, Path inputDir, Path bucketsDir, Path mergedDir, Path outDir, int numWorkers,
                        int numBuckets) throws IOException {
@@ -149,7 +150,7 @@ public class Coordinator {
     }
 
     public boolean isFinished() {
-        return remainingMaps.get() == 0 && remainingReduces.get() == 0 && reduceQueue.isEmpty();
+        return errorOccuped || remainingMaps.get() == 0 && remainingReduces.get() == 0 && reduceQueue.isEmpty();
     }
 
     public void run() {
@@ -182,4 +183,15 @@ public class Coordinator {
             executor.shutdownNow();
         }
     }
+
+    void reportWorkerError(Exception e){
+        if (!errorOccuped){
+            lock.lock();
+            errorOccuped = true;
+            logger.log(Level.SEVERE, "worker failed with exception", e);
+            executor.shutdownNow();
+            lock.unlock();
+        }
+    }
+
 }
