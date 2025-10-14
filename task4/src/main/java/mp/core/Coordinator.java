@@ -30,12 +30,19 @@ public class Coordinator {
     private final AtomicInteger remainingReduces;
     private final ReentrantLock reduceLock = new ReentrantLock();
     private final ExecutorService executor;
+    private final Path bucketsDir;
+    private final Path mergedDir;
+    private final Path outDir;
     private volatile boolean reducePhaseStarted = false;
 
-    public Coordinator(WorkerLogic logic, Path inputDir, int numWorkers, int numBuckets) throws IOException {
+    public Coordinator(WorkerLogic logic, Path inputDir, Path bucketsDir, Path mergedDir, Path outDir, int numWorkers,
+                       int numBuckets) throws IOException {
         this.logic = logic;
         this.numBuckets = numBuckets;
         this.numWorkers = numWorkers;
+        this.bucketsDir = bucketsDir;
+        this.mergedDir = mergedDir;
+        this.outDir = outDir;
 
         try (Stream<Path> files = Files.list(inputDir)) {
             files.filter(Files::isRegularFile).forEach(mapQueue::add);
@@ -46,11 +53,17 @@ public class Coordinator {
         this.executor = Executors.newFixedThreadPool(numWorkers);
     }
 
+    public Path getBucketsDir() {
+        return bucketsDir;
+    }
+
+    public Path getOutDir() {
+        return outDir;
+    }
+
     private void mergeBuckets() throws IOException {
         logger.log(Level.FINE, "starting bucket merging phase");
 
-        Path bucketDir = Path.of("tmp/buckets");
-        Path mergedDir = Path.of("tmp/merged");
         Files.createDirectories(mergedDir);
 
         for (int b = 0; b < numBuckets; b++) {
@@ -58,7 +71,7 @@ public class Coordinator {
             Path mergedFile = mergedDir.resolve("merged-" + bucketId + ".txt");
             List<String> allLines = new ArrayList<>();
 
-            try (Stream<Path> files = Files.list(bucketDir)) {
+            try (Stream<Path> files = Files.list(bucketsDir)) {
                 List<Path> bucketFiles = files
                         .filter(p -> {
                             String name = p.getFileName().toString();

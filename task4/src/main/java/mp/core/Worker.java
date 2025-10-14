@@ -14,8 +14,6 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 public class Worker implements Runnable {
-    private static final Path BUCKETS_DIR = Path.of("tmp/buckets");
-    private static final Path OUT_DIR = Path.of("tmp/out");
     private static final Logger logger = Logger.getLogger(Worker.class.getName());
     private final Coordinator coordinator;
     private final WorkerLogic logic;
@@ -44,13 +42,14 @@ public class Worker implements Runnable {
             buckets[bucket].add(kv);
         }
 
-        Files.createDirectories(BUCKETS_DIR);
+        Path bucketsDir = coordinator.getBucketsDir();
+        Files.createDirectories(bucketsDir);
         String baseName = inputFile.getFileName().toString().replace(".txt", "");
 
         logger.log(Level.FINER, "writing bucket files for {0}", baseName);
 
         for (int b = 0; b < bucketsCount; b++) {
-            Path outFile = BUCKETS_DIR.resolve("mr-" + baseName + "-" + b + ".txt");
+            Path outFile = bucketsDir.resolve("mr-" + baseName + "-" + b + ".txt");
             List<String> lines = buckets[b].stream()
                     .map(kv -> kv.key() + "\t" + kv.value())
                     .collect(Collectors.toList());
@@ -78,8 +77,10 @@ public class Worker implements Runnable {
 
         List<String> outLines = logic.reduce(keyValues);
 
-        Files.createDirectories(OUT_DIR);
-        Path outFile = OUT_DIR.resolve("mr-out-" + reduceId + ".txt");
+
+        Path outDir = coordinator.getOutDir();
+        Files.createDirectories(outDir);
+        Path outFile = outDir.resolve("mr-out-" + reduceId + ".txt");
         Files.write(outFile, outLines,
                 StandardOpenOption.CREATE,
                 StandardOpenOption.TRUNCATE_EXISTING);
